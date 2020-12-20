@@ -1,0 +1,124 @@
+---
+title: "Análise Perforance - Kobe"
+author: "Vítor Cáceres"
+date: "11/20/2020"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#Carregando bibliotecas
+
+rm(list=ls())
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(tidyverse)
+library(data.table)
+
+my.dir <- "/Users/vitorcaceres/Desktop/R"
+setwd(my.dir)
+```
+  
+  
+Para calcular a performance dos desenvolvedores, dividimos o tempo gasto nas tasks pelo tempo estimado. Portanto, Devs que tem média de performance abaixo de 1, entregam suas tasks abaixo do tempo estimado inicialmente.
+  
+  
+Ex.: Dev com performance 0,75 custuma entregar suas tasks com 75% do tempo estimado. Já o Dev que possue performance 2, entrega suas tasks no dobro do tempo.
+  
+    
+    
+```{r message=FALSE, echo=FALSE}
+#Criando o dataframe que sera utilizado (my.database)
+my.database <- read_csv2("Jira2020.csv")
+my.database$Performance <- my.database$'Σ de Tempo Gasto'/my.database$`Σ da Estimativa Original`
+my.database$`Registro de Trabalho.updated` <- substr(my.database$`Registro de Trabalho.updated`,0,11)
+my.database$`Registro de Trabalho.updated` <- parse_date_time(my.database$`Registro de Trabalho.updated`, orders = c("ymd", "dmy", "mdy"))
+
+my.database$Mes <- month(my.database$`Registro de Trabalho.updated`)
+my.database$DiaSemana <- weekdays(my.database$`Registro de Trabalho.updated`)
+
+
+my.database$Ano <- year(my.database$`Registro de Trabalho.updated`)
+
+#Limpando os Dados
+noDevs <- c("Graziela Gomes", "Priscilla Souza Alves", "Cássio Schroeder", "rodrigo freitas", "Vítor Cáceres")
+my.database <- my.database %>% filter(!grepl('Cenários', Resumo)) %>%
+                filter(!grepl('Testes', Resumo)) %>%
+                filter(!grepl('Cenários de Testes', Resumo)) %>%
+                filter(!grepl('TOK-2192', Chave)) %>%
+                filter(`Σ da Estimativa Original`!=0) %>%
+                filter(Ano=="2020") %>%
+                filter(Responsável!= "Graziela Gomes") %>%
+                filter(Responsável!= "Priscilla Souza Alves") %>%
+                filter(Responsável!= "Cássio Schroeder") %>%
+                filter(Responsável!= "rodrigo freitas") %>%
+                filter(Responsável!= "Vítor Cáceres") %>%
+                filter(Responsável!= "Daniel Barnasque") %>%
+                drop_na(`Σ da Estimativa Original`)
+
+head(select(my.database, `Chave`, `Σ da Estimativa Original`, `Σ de Tempo Gasto`, `Performance`))
+```
+  
+Abaixo podemos ver a média geral de 2020 das performances por desenvolvedor.
+  
+```{r message=FALSE}
+my.databasePerf <- group_by(my.database, Responsável) %>% 
+                    summarize(Performance=mean(Performance)) %>%
+                    arrange(Performance)
+
+my.databasePerf
+
+```
+  
+  
+Importante ressaltar que esse KPI de Performance é um dos indicadores que devemos avaliar, mas sozinho pode passar uma mensagem errada.
+  
+  
+  
+Para demonstrar isso, pegamos o exemplo do Gabriel que possui performance de ~1,8. Para quem trabalha próximo a ele pode soar estranho uma média tão alta.
+  
+  
+Indo mais a fundo nos dados, podemos ver que 50% das tasks dele são entregues em até 1,13 de performance, algo muito bom, mas os outliers acabam distorcendo a média.
+  
+  
+
+```{r}
+my.Gabrieldata <- my.database %>% filter(Responsável=="Gabriel Machado")
+
+boxplot(my.Gabrieldata$Performance)
+summary(my.Gabrieldata$Performance)
+```
+Além do indicador de performance, pensamos em utilizar tambem:
+
+- Tasks desenvolvidas
+- Horas de bugs geradas pelas historias
+- Tempo gasto total em desenvolvimento
+
+Qualquer outra ideia será bem vinda!
+\
+\
+\
+
+Para concluir, essa é a nossa performance por mês e dias da semana em 2020:
+
+```{r message=FALSE}
+my.averageResultsPerMonth <- group_by(my.database, Mes) %>%
+                              summarize(Performance=mean(Performance))
+
+ggplot(data=my.averageResultsPerMonth, aes(x=Mes, y=Performance, group=1)) +
+  geom_line()+
+  geom_point()
+
+
+my.PerformanceDiaSemana <- my.database %>% group_by(DiaSemana) %>%
+                                                      summarize(Média=mean(Performance)) %>%
+                                                      arrange(Média)
+my.PerformanceDiaSemana
+```
+
+
+

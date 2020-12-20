@@ -1,0 +1,101 @@
+#Carregando biblitoecas necessárias
+rm(list=ls())
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(tidyverse)
+library(data.table)
+
+#Setando diretório
+my.dir <- "/Users/vitorcaceres/Desktop/R"
+setwd(my.dir)
+
+#Carregando dados
+my.database <- read_csv2("DataBaseNov.csv") #Carrega arquivo CSV
+my.database$Performance <- my.database$`Σ de Tempo Gasto` / my.database$`Σ da Estimativa Original` #Cria coluna de Performance
+my.database$`Registro de Trabalho.updated` <- substr(my.database$`Registro de Trabalho.updated`,0,11) #Extrai a data da coluna de registro de trabalho
+my.database$`Registro de Trabalho.updated` <- parse_date_time(my.database$`Registro de Trabalho.updated`, orders = c("ymd", "dmy", "mdy")) #Transforma a data em formato de data
+
+#criando coluna para Dia da Semana, Mês e Ano para ser filtrado depois
+my.database$Mes <- month(my.database$`Registro de Trabalho.updated`) #Coluna Mês
+my.database$DiaSemana <- weekdays(my.database$`Registro de Trabalho.updated`) #Coluna Dia da Semana
+my.database$Ano <- year(my.database$`Registro de Trabalho.updated`) #Coluna Ano
+
+#Criando coluna para verificar se existem duplicados baseado na chave
+my.database$duplicado <- duplicated(my.database$Chave)
+
+#Limpando os Dados
+my.database <- my.database %>% filter(!grepl('Cenários', Resumo)) %>%
+  filter(!grepl('Testes', Resumo)) %>%
+  filter(!grepl('Cenários de Testes', Resumo)) %>%
+  filter(Responsável!= "Graziela Gomes") %>%
+  filter(Responsável!= "Priscilla Souza Alves") %>%
+  filter(Responsável!= "Cássio Schroeder") %>%
+  filter(Responsável!= "rodrigo freitas") %>%
+  filter(Responsável!= "Julianne Glicerio") %>%
+  filter(Responsável!= "Vítor Cáceres") %>%
+  filter(Responsável!= "Daniel Barnasque") %>%
+  filter(Responsável!= "Matheus Martins") %>%
+  filter(Responsável!= "Luiza Fajardo Schneider") %>%
+  filter(duplicado== "FALSE") # Ao pedir pro jira o worklog.updated, ele puxa um registro para cada dia registrados, portanto podem ter linhas duplicadas
+
+#Filtro para Datas
+my.database2 <- my.database %>% filter(Ano=="2020") %>%
+                                filter(Mes=="11")
+
+#Criando o databasePerf, que servirá para calcuar a performance. O database ficará intacto para calcular o tempo gasto.
+  
+my.databasePerf <- filter(my.database2, `Σ da Estimativa Original`!=0)
+
+#Ranking médio de Perfoirmance
+my.MonthlyReport <- group_by(my.databasePerf, Responsável) %>% 
+                    summarize(Performance=mean(Performance)) %>%
+                    arrange(Responsável)
+
+
+#Tempo Gasto total (contando bugs)
+my.SumTimeSpent <- my.database2 %>% group_by(Responsável) %>%
+                                    summarise(HorasLogadas = sum(`Σ de Tempo Gasto`)/3600) %>%
+                                    arrange(Responsável)
+my.MonthlyReport <- left_join(my.MonthlyReport, my.SumTimeSpent, by="Responsável") #Adicionando na tabela princiapl
+
+#Tempo Estimado total
+my.SumEstimated <- my.databasePerf %>% group_by(Responsável) %>%
+                                        summarise(EstimadoTotal = sum(`Σ da Estimativa Original`)/3600) %>%
+                                        arrange(Responsável)
+my.MonthlyReport <- left_join(my.MonthlyReport, my.SumEstimated, by="Responsável") #Adicionando na tabela princiapl
+
+#Numero de tasks trabalhadas
+my.SumIssues <- my.database2 %>% group_by(Responsável) %>%
+                                  summarise(Issues=n()) %>%
+                                  arrange(Responsável)
+my.MonthlyReport <- left_join(my.MonthlyReport, my.SumIssues, by="Responsável") #Adicionando na tabela princiapl
+
+#Responsável por história
+my.DicionarioHistoria <- my.database %>% filter(`Tipo de item` == "História") %>%
+                                          select(Chave, Responsável)
+
+#Número de sub bugs por história no mes
+my.bugsporHist <- my.database2 %>% filter(`Tipo de item` == "Sub-Bug") %>%
+                                    group_by(Pai.undefined) %>%
+                                    summarise(Numero=n())
+
+#Relacionando o número de subbugs ao Dev
+my.bugsporHist <- rename(my.bugsporHist, Chave = Pai.undefined) #Setando o mesmo nome para as colunas que vão servir para o join
+my.DicionarioHistoria2 <- left_join(my.bugsporHist, my.DicionarioHistoria, by="Chave") #Unindo tabelas
+my.DicionarioHistoria2 <- my.DicionarioHistoria2 %>% group_by(Responsável) %>% # Somando sub bugs por responsável
+                                                      summarize(BugsGerados = sum(Numero))
+
+my.MonthlyReport <- left_join(my.MonthlyReport, my.DicionarioHistoria2, by="Responsável") #Adicionando na tabela princiapl
+
+#Tempo gasto em bugs ou subbugs
+Bugs <- c("Sub-Bug", "Bug") #Criando lista do que será filtrado
+my.TempoBug <- my.database2 %>% filter(`Tipo de item` %in% Bugs) %>% #Filtro por tipo de item
+                                group_by(Responsável) %>% #Agrupar por responsável
+                                summarise(HorasLogadasBugs=sum(`Σ de Tempo Gasto`)/3600) #Somando o tempo gasto dos itens filtrados
+
+my.MonthlyReport <- left_join(my.MonthlyReport, my.TempoBug, by="Responsável") #Adicionando na tabela princiapl
+
+my.MonthlyReport
+
+

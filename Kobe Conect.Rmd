@@ -1,0 +1,75 @@
+---
+title: "Analises Kobe Connect"
+author: "Vítor Cáceres"
+date: "11/25/2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r echo=FALSE, warnings=FALSE, message=FALSE}
+#Carregando bibliotecas
+rm(list=ls())
+library(dplyr)
+library(lubridate)
+library(tidyverse)
+
+#Configurando diretório
+my.dir <- "/Users/vitorcaceres/Desktop/R"
+setwd(my.dir)
+
+#Carregando base de dados
+my.database <- read_csv2("DataBaseNov.csv")
+```
+
+
+
+```{r echo=FALSE}
+#Transformando campo de registro de trabalho em data
+my.database$`Registro de Trabalho.updated` <- substr(my.database$`Registro de Trabalho.updated`,0,11)
+my.database$`Registro de Trabalho.updated` <- parse_date_time(my.database$`Registro de Trabalho.updated`, orders = c("ymd", "dmy", "mdy"))
+
+#Criando coluna para dia, mes e ano para podermos utilizar filtro
+my.database$Mes <- month(my.database$`Registro de Trabalho.updated`)
+my.database$DiaSemana <- weekdays(my.database$`Registro de Trabalho.updated`)
+my.database$Ano <- year(my.database$`Registro de Trabalho.updated`)
+
+#Limpando os dados
+my.database <- my.database %>% filter(!grepl('Cenários', Resumo)) %>%
+  filter(!grepl('Testes', Resumo)) %>%
+  filter(!grepl('Cenários de Testes', Resumo)) %>%
+  filter(Ano=="2020") %>%
+  filter(Responsável!= "Graziela Gomes") %>%
+  filter(Responsável!= "Priscilla Souza Alves") %>%
+  filter(Responsável!= "Cássio Schroeder") %>%
+  filter(Responsável!= "rodrigo freitas") %>%
+  filter(Responsável!= "Vítor Cáceres") %>%
+  filter(Responsável!= "Daniel Barnasque")
+
+#Criação da coluna de performance
+#my.database$Performance <- my.database$'Σ de Tempo Gasto'/my.database$'Σ da Estimativa Original'
+
+  
+```
+
+
+
+```{r message=FALSE, echo=FALSE}
+#Tempo Gasto total (contando bugs)
+my.SumTimeSpent <- my.database %>% group_by(Responsável) %>%
+                                    summarise(HorasLogadas = sum(`Σ de Tempo Gasto`)/3600) %>%
+                                    arrange(Responsável)
+
+#Numero de tasks trabalhadas
+my.SumIssues <- my.database %>% group_by(Responsável) %>%
+                                summarise(Contagem=n()) %>%
+                                arrange(Responsável)
+
+my.SumTimeSpent <- left_join(my.SumTimeSpent, my.SumIssues, by="Responsável")
+
+my.SumTimeSpent$Média <- my.SumTimeSpent$HorasLogadas / my.SumTimeSpent$Contagem
+
+my.SumTimeSpent
+```
+
+
